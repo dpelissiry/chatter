@@ -8,11 +8,13 @@ from queue import Queue
 class Request:
     MESSAGE = 0
     CONNACK = 1
+    QUIT = 2
+    QUITACK = 3
 
 class Server():
-    def __init__(self, port):
-        self.port = int(port)
-        self.ip = socket.gethostname()
+    def __init__(self):
+        self.port = 5555#int(port)
+        self.ip = "0.0.0.0"
         self.messages = Queue()
         self.clients = []#Queue()
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -25,19 +27,23 @@ class Server():
         connect_patt = "CONNECT\\r\\n.+: (?P<id>.+)\\r\\n.+: (?P<ip>.+)\\r\\n.+: (?P<port>.+)\\r\\n\\r\\n"
         message_patt = "MESSAGE\\r\\n.+: (?P<id>.+)\\r\\n.+: (?P<msg>.+)\\r\\n\\r\\n"
         quit_patt    = "QUIT\\r\\n.+: (?P<id>.+)\\r\\n\\r\\n"
+        print(s)
         if (res := re.match(connect_patt, s)) is not None:
             self.new_conn(conn, res['id'])
         elif (res := re.match(message_patt, s)) is not None:
             self.new_message(res.groupdict(), res['id'])
         elif (res := re.match(quit_patt, s)) is not None:
-            self.delete_user(res['id'])
+            self.delete_user(res['id'], conn)
         return
-    def delete_user(self, id):
+    def delete_user(self, id, conn):
+        self.send(Request.QUITACK,None, conn)
         for n, d in enumerate(self.clients):
             if id == d['id']:
                 print(f"{id} has disconnected")
                 del self.clients[n]
-                return
+                break
+        self.send(Request.QUIT, id) # inform other users that user quit
+        return
 
 
     def new_conn(self, conn, id):
@@ -78,6 +84,14 @@ class Server():
                 
         elif r == Request.CONNACK:
             conn.send((f"CONNACK\r\n\r\n").encode('utf-8'))
+        elif r == Request.QUIT:
+            print("SENDING QUIT")
+            for c in self.clients:
+                conn_obj = c['conn']
+                conn_obj.send((f"QUIT\r\nid: {data}\r\n\r\n").encode('utf-8'))
+                #ack = self.socket.recv(1024).decode('utf-8')
+        elif r == Request.QUITACK:
+            conn.send((f"QUITACK\r\n\r\n").encode('utf-8'))
         return
 
     
@@ -86,11 +100,11 @@ class Server():
         sys.exit()
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--port')
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('-p', '--port')
 
-    args = parser.parse_args()
-    server = Server(args.port)
+    # args = parser.parse_args()
+    server = Server()
     server.listen()
 if __name__ == '__main__':
     main()
